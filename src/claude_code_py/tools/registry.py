@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from claude_code_py.models.messages import ToolCall
 from claude_code_py.tools.base import Tool
 
 
@@ -21,4 +22,13 @@ class ToolRegistry:
         return sorted(self._tools)
 
     def describe_all(self) -> list[dict]:
-        return [self._tools[name].describe() for name in self.names()]
+        return [self.describe(name) for name in self.names()]
+
+    def describe(self, name: str) -> dict:
+        tool = self._tools[name]
+        data = tool.describe()
+        data["tags"] = list(tool.tags)
+        return data
+
+    def build_tool_call(self, name: str, arguments: dict, call_id: str | None = None) -> ToolCall:
+        return ToolCall(id=call_id or ToolCall().id, name=name, arguments=arguments)

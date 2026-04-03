@@ -21,7 +21,7 @@ A realistic Python rewrite of a Claude Code-style local agent runtime.
 - Session artifacts:
   - `.sessions/<id>.jsonl` transcript
   - `.sessions/<id>.state.json` session state
-- Clear extension scaffolding for plugins, skills, MCP, tasks, remote, and bridge layers
+- Real discovery/loaders for plugins, skills, MCP manifests, tasks, remote sessions, and bridge sessions
 - Pytest coverage for registry, permissions, providers, and query flow
 
 ## Quick start
@@ -68,22 +68,29 @@ Permission handling is intentionally explicit:
 
 ### Sessions and transcripts
 
-Each session has both a state file and append-only JSONL transcript. That gives a durable trail for replay, compaction, summaries, and future resumability.
+Each session has both a state file and append-only JSONL transcript. The runtime can now replay transcript entries, rebuild in-memory conversation state, and resume a prior session id. Transcript files also capture provider events and tool-call records for later audit/debug work.
 
 ## Roadmap
 
+### Milestone 2 delivered
+
+1. provider streaming/event model with transcripted provider events
+2. resumable sessions and transcript replay
+3. richer slash-command introspection for tools/provider/runtime counters
+4. plugin + skill discovery/loaders
+5. MCP registry/loader scaffolding with runnable command resolution
+6. task orchestration primitives and sub-agent descriptors
+7. bridge + remote session registries
+8. expanded CLI commands for running, resuming, listing sessions, and listing tools
+
 ### Near-term
 
-1. streaming provider responses
-2. resumable sessions and transcript replay
-3. richer shell execution events and structured tool outputs
-4. command implementations for config/model/tool inspection
-5. built-in diff/search/glob tools
-6. plugin + skill discovery/loaders
-7. MCP client runtime and transport adapters
-8. remote bridge protocol and session forwarding
-9. task orchestration / sub-agent workers
-10. TUI layer
+1. richer shell execution events and structured tool outputs
+2. built-in diff/search/glob tools
+3. MCP client runtime transports beyond manifest loading
+4. remote bridge protocol forwarding and sync
+5. task worker execution backends
+6. TUI layer
 
 ### Longer-term
 

@@ -5,7 +5,7 @@ from typing import Any
 
 import orjson
 
-from claude_code_py.models.messages import Message, ToolResult
+from claude_code_py.models.messages import Message, ToolResult, TranscriptReplay
 from claude_code_py.models.runtime import SessionState
 
 
@@ -27,6 +27,31 @@ class TranscriptStore:
         if not self.session_file.exists():
             return []
         return [orjson.loads(line) for line in self.session_file.read_bytes().splitlines() if line.strip()]
+
+    def replay(self) -> TranscriptReplay:
+        replay = TranscriptReplay()
+        for entry in self.read_entries():
+            entry_type = entry.get("type")
+            if entry_type == "message":
+                payload = {key: value for key, value in entry.items() if key != "type"}
+                replay.messages.append(Message.model_validate(payload))
+            elif entry_type == "tool_result":
+                payload = {key: value for key, value in entry.items() if key != "type"}
+                replay.tool_results.append(ToolResult.model_validate(payload))
+                replay.messages.append(ToolResult.model_validate(payload).to_tool_message())
+            else:
+                replay.events.append(entry)
+        return replay
+
+    def last_message(self, role: str | None = None) -> Message | None:
+        for entry in reversed(self.read_entries()):
+            if entry.get("type") != "message":
+                continue
+            if role is not None and entry.get("role") != role:
+                continue
+            payload = {key: value for key, value in entry.items() if key != "type"}
+            return Message.model_validate(payload)
+        return None
 
     def _append(self, payload: dict[str, Any]) -> None:
         with self.session_file.open("ab") as fh:
@@ -56,3 +81,6 @@ class SessionStore:
 
     def list_sessions(self) -> list[str]:
         return sorted(path.name[: -len(".state.json")] for path in self.root.glob("*.state.json"))
+
+    def load_transcript(self, session_id: str) -> TranscriptReplay:
+        return TranscriptStore(self.transcript_path(session_id)).replay()

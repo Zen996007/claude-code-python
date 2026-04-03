@@ -12,6 +12,9 @@ class RuntimeConfig(BaseModel):
     max_turns: int = 12
     verbose: bool = False
     allow_commands: bool = True
+    plugin_dir: Path | None = None
+    skill_dir: Path | None = None
+    mcp_dir: Path | None = None
 
 
 class SessionState(BaseModel):
@@ -21,3 +24,5 @@ class SessionState(BaseModel):
     total_messages: int = 0
     notes: list[str] = Field(default_factory=list)
     command_history: list[str] = Field(default_factory=list)
+    resumed_from: str | None = None
+    transcript_entries: int = 0

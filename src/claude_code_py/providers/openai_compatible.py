@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 import os
+from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
 
-from claude_code_py.models.messages import AgentResponse, Message, ToolCall
+from claude_code_py.models.messages import AgentResponse, Message, ProviderEvent, ToolCall
 from claude_code_py.providers.base import Provider, ProviderConfig
 
 
@@ -42,6 +44,25 @@ class OpenAICompatibleProvider(Provider):
             data = response.json()
         return self._parse_response(data)
 
+    async def stream(self, messages: list[Message], *, tools: list[dict] | None = None) -> AsyncIterator[ProviderEvent]:
+        response = await self.generate(messages, tools=tools)
+        yield ProviderEvent(type="response.started", payload={"provider": "openai-compatible"})
+        if response.text:
+            yield ProviderEvent(type="response.delta", payload={"text": response.text})
+        for tool_call in response.tool_calls:
+            yield ProviderEvent(
+                type="tool.call",
+                payload={"id": tool_call.id, "name": tool_call.name, "arguments": tool_call.arguments},
+            )
+        yield ProviderEvent(
+            type="response.completed",
+            payload={
+                "text": response.text,
+                "stop_reason": response.stop_reason,
+                "metadata": response.metadata,
+            },
+        )
+
     def _message_to_wire(self, message: Message) -> dict[str, Any]:
         payload = {"role": message.role, "content": message.content}
         if message.name:
@@ -70,8 +91,6 @@ class OpenAICompatibleProvider(Provider):
         )
 
     def _safe_json_load(self, raw: str) -> dict[str, Any]:
-        import json
-
         parsed = json.loads(raw or "{}")
         if not isinstance(parsed, dict):
             raise ValueError("Tool arguments must decode to a JSON object")

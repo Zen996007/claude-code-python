@@ -45,3 +45,21 @@ class AgentResponse(BaseModel):
     tool_calls: list[ToolCall] = Field(default_factory=list)
     stop_reason: Literal["end_turn", "tool_use", "max_turns"] = "end_turn"
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ProviderEvent(BaseModel):
+    type: Literal[
+        "response.started",
+        "response.delta",
+        "response.completed",
+        "tool.call",
+        "tool.result",
+    ]
+    turn_index: int = 0
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class TranscriptReplay(BaseModel):
+    messages: list[Message] = Field(default_factory=list)
+    tool_results: list[ToolResult] = Field(default_factory=list)
+    events: list[dict[str, Any]] = Field(default_factory=list)

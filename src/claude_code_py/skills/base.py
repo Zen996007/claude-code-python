@@ -11,3 +11,4 @@ class SkillSpec:
     description: str = ""
     enabled: bool = True
     prompts: list[str] = field(default_factory=list)
+    references: list[Path] = field(default_factory=list)

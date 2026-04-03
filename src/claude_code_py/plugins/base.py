@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Protocol
 
 
 @dataclass(slots=True)
 class PluginSpec:
     name: str
+    root: Path
     version: str = "0.1.0"
     entrypoint: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
