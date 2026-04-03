@@ -37,8 +37,9 @@ class TranscriptStore:
                 replay.messages.append(Message.model_validate(payload))
             elif entry_type == "tool_result":
                 payload = {key: value for key, value in entry.items() if key != "type"}
-                replay.tool_results.append(ToolResult.model_validate(payload))
-                replay.messages.append(ToolResult.model_validate(payload).to_tool_message())
+                result = ToolResult.model_validate(payload)
+                replay.tool_results.append(result)
+                replay.messages.append(result.to_tool_message())
             else:
                 replay.events.append(entry)
         return replay
@@ -81,6 +82,15 @@ class SessionStore:
 
     def list_sessions(self) -> list[str]:
         return sorted(path.name[: -len(".state.json")] for path in self.root.glob("*.state.json"))
+
+    def list_states(self) -> list[SessionState]:
+        return sorted((self.load_state(session_id) for session_id in self.list_sessions()), key=lambda item: item.session_id)
+
+    def latest_session_id(self) -> str | None:
+        states = self.list_states()
+        if not states:
+            return None
+        return max(states, key=lambda item: self.state_path(item.session_id).stat().st_mtime).session_id
 
     def load_transcript(self, session_id: str) -> TranscriptReplay:
         return TranscriptStore(self.transcript_path(session_id)).replay()

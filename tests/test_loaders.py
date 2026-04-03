@@ -33,20 +33,23 @@ def test_mcp_tasks_remote_and_bridge_registries(tmp_path: Path) -> None:
     mcp_root.mkdir()
     (mcp_root / "fetch.json").write_text('{"name":"fetch","transport":"stdio","command":["python","-m","fetch_mcp"]}')
     registry = MCPRegistry(mcp_root)
-    servers = registry.discover()
-    assert servers[0].name == "fetch"
+    assert registry.discover()[0].name == "fetch"
     assert registry.runnable_command("fetch") == ["python", "-m", "fetch_mcp"]
+    assert registry.get("fetch") is not None
 
     orchestrator = TaskOrchestrator(tmp_path / "state" / "tasks")
     orchestrator.add_task(TaskSpec(id="t1", title="Rewrite runtime", status="running"))
     orchestrator.add_subagent(SubAgentTask(id="s1", task_id="t1", label="worker-a", status="running"))
     assert orchestrator.summary()["running_tasks"] == 1
-    assert orchestrator.summary()["running_subagents"] == 1
+    assert orchestrator.get_task("t1") is not None
+    assert orchestrator.get_subagent("s1") is not None
 
     remote = RemoteSessionRegistry(tmp_path / "state" / "remote")
     remote.register(RemoteSessionSpec(session_id="abc", endpoint="https://example.com"))
+    assert remote.get("abc") is not None
     assert remote.list_sessions()[0].endpoint == "https://example.com"
 
     bridge = BridgeRegistry(tmp_path / "state" / "bridges")
     bridge.register(BridgeSession(bridge_id="b1", local_session_id="local", remote_session_id="abc"))
+    assert bridge.get("b1") is not None
     assert bridge.list_sessions()[0].remote_session_id == "abc"

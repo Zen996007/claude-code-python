@@ -52,7 +52,9 @@ class QueryEngine:
         session_id: str | None = None,
     ) -> "QueryEngine":
         session_store = SessionStore(config.session_dir)
-        target_session_id = session_id or session_store.list_sessions()[-1]
+        target_session_id = session_id or session_store.latest_session_id()
+        if target_session_id is None:
+            raise ValueError("No sessions available to resume")
         state = session_store.load_state(target_session_id)
         replay = session_store.load_transcript(target_session_id)
         state.resumed_from = target_session_id
@@ -84,6 +86,10 @@ class QueryEngine:
                 self.transcript.append_message(message)
             self.messages.append(message)
         self.state.turn_count += 1
+        self.state.last_user_prompt = prompt
+        assistant_messages = [item.content for item in results if item.role == "assistant" and item.content]
+        if assistant_messages:
+            self.state.last_assistant_message = assistant_messages[-1]
         self._refresh_counters()
         self._persist_state()
         return results
@@ -98,6 +104,10 @@ class QueryEngine:
                 self.transcript.append_message(message)
             self.messages.append(message)
         self.state.turn_count += 1
+        self.state.last_user_prompt = prompt
+        assistant_messages = [item.content for item in results if item.role == "assistant" and item.content]
+        if assistant_messages:
+            self.state.last_assistant_message = assistant_messages[-1]
         self._refresh_counters()
         self._persist_state()
         return results
@@ -116,6 +126,8 @@ class QueryEngine:
             session_id=self.state.session_id,
             metadata={
                 "state": self.state,
+                "runtime": self.config,
+                "commands": self.commands,
                 "tool_registry": self.agent_loop.tool_registry,
                 "provider": self.agent_loop.provider,
                 "plugin_loader": self.plugin_loader,
@@ -135,6 +147,9 @@ class QueryEngine:
             self.messages.append(reply)
             self.transcript.append_message(reply)
         self.state.turn_count += 1
+        self.state.last_user_prompt = prompt
+        if replies:
+            self.state.last_assistant_message = replies[-1].content
         self._refresh_counters()
         self._persist_state()
 

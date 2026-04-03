@@ -18,5 +18,11 @@ class BridgeRegistry:
             orjson.dumps(asdict(session), option=orjson.OPT_INDENT_2)
         )
 
+    def get(self, bridge_id: str) -> BridgeSession | None:
+        path = self.root / f"{bridge_id}.json"
+        if not path.exists():
+            return None
+        return BridgeSession(**orjson.loads(path.read_bytes()))
+
     def list_sessions(self) -> list[BridgeSession]:
         return [BridgeSession(**orjson.loads(path.read_bytes())) for path in sorted(self.root.glob("*.json"))]

@@ -9,12 +9,18 @@ class RuntimeConfig(BaseModel):
     cwd: Path
     session_dir: Path
     model_name: str = "mock-provider"
+    provider: str = "mock"
     max_turns: int = 12
     verbose: bool = False
     allow_commands: bool = True
     plugin_dir: Path | None = None
     skill_dir: Path | None = None
     mcp_dir: Path | None = None
+    temperature: float = 0.0
+    max_tokens: int = 2048
+    api_base: str | None = None
+    api_key_env: str | None = None
+    system_prompt: str | None = None
 
 
 class SessionState(BaseModel):
@@ -26,3 +32,5 @@ class SessionState(BaseModel):
     command_history: list[str] = Field(default_factory=list)
     resumed_from: str | None = None
     transcript_entries: int = 0
+    last_user_prompt: str | None = None
+    last_assistant_message: str | None = None

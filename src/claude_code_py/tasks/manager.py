@@ -19,6 +19,18 @@ class TaskOrchestrator:
     def add_subagent(self, subagent: SubAgentTask) -> None:
         self._write_json(self.root / f"{subagent.id}.subagent.json", asdict(subagent))
 
+    def get_task(self, task_id: str) -> TaskSpec | None:
+        path = self.root / f"{task_id}.task.json"
+        if not path.exists():
+            return None
+        return TaskSpec(**orjson.loads(path.read_bytes()))
+
+    def get_subagent(self, subagent_id: str) -> SubAgentTask | None:
+        path = self.root / f"{subagent_id}.subagent.json"
+        if not path.exists():
+            return None
+        return SubAgentTask(**orjson.loads(path.read_bytes()))
+
     def list_tasks(self) -> list[TaskSpec]:
         return [TaskSpec(**orjson.loads(path.read_bytes())) for path in sorted(self.root.glob("*.task.json"))]
 

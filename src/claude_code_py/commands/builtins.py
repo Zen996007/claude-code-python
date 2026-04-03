@@ -1,6 +1,14 @@
 from __future__ import annotations
 
+import json
+
 from claude_code_py.commands.base import Command, CommandContext, CommandResult
+from claude_code_py.registry_snapshot import RegistrySnapshot
+
+
+def _tail(raw: str) -> str:
+    parts = raw.split(maxsplit=1)
+    return parts[1].strip() if len(parts) > 1 else ""
 
 
 class HelpCommand(Command):
@@ -20,19 +28,24 @@ class HelpCommand(Command):
 
 class SessionCommand(Command):
     name = "session"
-    help_text = "Show current session id and counters"
+    help_text = "Show current session id, counters, and resume lineage"
 
     async def run(self, raw: str, context: CommandContext) -> CommandResult:
         state = context.metadata.get("state")
         if state is None:
             return CommandResult(handled=True, output=f"session_id={context.session_id}")
-        return CommandResult(
-            handled=True,
-            output=(
-                f"session_id={state.session_id} turns={state.turn_count} "
-                f"messages={state.total_messages} tools={state.total_tool_calls}"
-            ),
-        )
+        details = [
+            f"session_id={state.session_id}",
+            f"turns={state.turn_count}",
+            f"messages={state.total_messages}",
+            f"tools={state.total_tool_calls}",
+            f"transcript_entries={state.transcript_entries}",
+        ]
+        if state.resumed_from:
+            details.append(f"resumed_from={state.resumed_from}")
+        if state.last_user_prompt:
+            details.append(f"last_user_prompt={state.last_user_prompt}")
+        return CommandResult(handled=True, output=" ".join(details))
 
 
 class ToolsCommand(Command):
@@ -41,10 +54,9 @@ class ToolsCommand(Command):
 
     async def run(self, raw: str, context: CommandContext) -> CommandResult:
         registry = context.metadata["tool_registry"]
-        parts = raw.split(maxsplit=1)
-        if len(parts) == 1:
+        name = _tail(raw)
+        if not name:
             return CommandResult(handled=True, output="\n".join(registry.names()))
-        name = parts[1].strip()
         tool = registry.get(name)
         if tool is None:
             return CommandResult(handled=True, output=f"Unknown tool: {name}")
@@ -55,7 +67,7 @@ class ToolsCommand(Command):
                 f"name={description['name']}\n"
                 f"description={description['description']}\n"
                 f"tags={','.join(description.get('tags', [])) or '-'}\n"
-                f"parameters={description['parameters']}"
+                f"parameters={json.dumps(description['parameters'], ensure_ascii=False)}"
             ),
         )
 
@@ -67,72 +79,172 @@ class ProviderCommand(Command):
     async def run(self, raw: str, context: CommandContext) -> CommandResult:
         provider = context.metadata["provider"]
         config = provider.config
+        runtime = context.metadata.get("runtime")
         return CommandResult(
             handled=True,
             output=(
                 f"provider={provider.__class__.__name__}\n"
+                f"provider_id={getattr(runtime, 'provider', 'unknown')}\n"
                 f"model={config.model}\n"
                 f"temperature={config.temperature}\n"
-                f"max_tokens={config.max_tokens}"
+                f"max_tokens={config.max_tokens}\n"
+                f"api_base={config.api_base or '-'}\n"
+                f"api_key_env={config.api_key_env or '-'}"
             ),
         )
 
 
 class PluginsCommand(Command):
     name = "plugins"
-    help_text = "List discovered plugins"
+    help_text = "List discovered plugins or inspect one: /plugins [name]"
 
     async def run(self, raw: str, context: CommandContext) -> CommandResult:
         loader = context.metadata.get("plugin_loader")
-        plugins = loader.discover() if loader else []
-        if not plugins:
+        items = RegistrySnapshot.plugin_rows(loader) if loader else []
+        if not items:
             return CommandResult(handled=True, output="No plugins discovered")
-        return CommandResult(
-            handled=True,
-            output="\n".join(f"{item.name}@{item.version} [{item.root}]" for item in plugins),
-        )
+        name = _tail(raw)
+        if not name:
+            return CommandResult(
+                handled=True,
+                output="\n".join(f"{item['name']}@{item['version']} [{item['root']}]" for item in items),
+            )
+        for item in items:
+            if item["name"] == name:
+                return CommandResult(handled=True, output=json.dumps(item, indent=2, ensure_ascii=False))
+        return CommandResult(handled=True, output=f"Unknown plugin: {name}")
 
 
 class SkillsCommand(Command):
     name = "skills"
-    help_text = "List discovered skills"
+    help_text = "List discovered skills or inspect one: /skills [name]"
 
     async def run(self, raw: str, context: CommandContext) -> CommandResult:
         loader = context.metadata.get("skill_loader")
-        skills = loader.discover() if loader else []
-        if not skills:
+        items = RegistrySnapshot.skill_rows(loader) if loader else []
+        if not items:
             return CommandResult(handled=True, output="No skills discovered")
-        return CommandResult(
-            handled=True,
-            output="\n".join(f"{item.name}: {item.description}" for item in skills),
-        )
+        name = _tail(raw)
+        if not name:
+            return CommandResult(
+                handled=True,
+                output="\n".join(f"{item['name']}: {item['description']}" for item in items),
+            )
+        for item in items:
+            if item["name"] == name:
+                return CommandResult(handled=True, output=json.dumps(item, indent=2, ensure_ascii=False))
+        return CommandResult(handled=True, output=f"Unknown skill: {name}")
 
 
 class MCPCommand(Command):
     name = "mcp"
-    help_text = "List discovered MCP servers"
+    help_text = "List discovered MCP servers or inspect one: /mcp [name]"
 
     async def run(self, raw: str, context: CommandContext) -> CommandResult:
         registry = context.metadata.get("mcp_registry")
-        servers = registry.discover() if registry else []
-        if not servers:
+        items = RegistrySnapshot.mcp_rows(registry) if registry else []
+        if not items:
             return CommandResult(handled=True, output="No MCP servers discovered")
-        return CommandResult(
-            handled=True,
-            output="\n".join(f"{item.name}: {item.transport} -> {' '.join(item.command)}" for item in servers),
-        )
+        name = _tail(raw)
+        if not name:
+            return CommandResult(
+                handled=True,
+                output="\n".join(f"{item['name']}: {item['transport']} -> {' '.join(item['command'])}" for item in items),
+            )
+        for item in items:
+            if item["name"] == name:
+                return CommandResult(handled=True, output=json.dumps(item, indent=2, ensure_ascii=False))
+        return CommandResult(handled=True, output=f"Unknown MCP server: {name}")
 
 
 class TasksCommand(Command):
     name = "tasks"
-    help_text = "Show task orchestrator summary"
+    help_text = "Show task summary or inspect details: /tasks detail"
 
     async def run(self, raw: str, context: CommandContext) -> CommandResult:
         orchestrator = context.metadata.get("task_orchestrator")
         if orchestrator is None:
             return CommandResult(handled=True, output="No task orchestrator configured")
-        summary = orchestrator.summary()
+        detail = _tail(raw)
+        payload = RegistrySnapshot.task_rows(orchestrator)
+        if detail == "detail":
+            return CommandResult(handled=True, output=json.dumps(payload, indent=2, ensure_ascii=False))
         return CommandResult(
             handled=True,
-            output=" ".join(f"{key}={value}" for key, value in summary.items()),
+            output=" ".join(f"{key}={value}" for key, value in payload["summary"].items()),
         )
+
+
+class RemoteCommand(Command):
+    name = "remote"
+    help_text = "List remote sessions or inspect one: /remote [session_id]"
+
+    async def run(self, raw: str, context: CommandContext) -> CommandResult:
+        registry = context.metadata.get("remote_registry")
+        items = RegistrySnapshot.remote_rows(registry) if registry else []
+        if not items:
+            return CommandResult(handled=True, output="No remote sessions registered")
+        session_id = _tail(raw)
+        if not session_id:
+            return CommandResult(
+                handled=True,
+                output="\n".join(f"{item['session_id']}: {item['protocol']} {item['endpoint']}" for item in items),
+            )
+        for item in items:
+            if item["session_id"] == session_id:
+                return CommandResult(handled=True, output=json.dumps(item, indent=2, ensure_ascii=False))
+        return CommandResult(handled=True, output=f"Unknown remote session: {session_id}")
+
+
+class BridgesCommand(Command):
+    name = "bridges"
+    help_text = "List bridge sessions or inspect one: /bridges [bridge_id]"
+
+    async def run(self, raw: str, context: CommandContext) -> CommandResult:
+        registry = context.metadata.get("bridge_registry")
+        items = RegistrySnapshot.bridge_rows(registry) if registry else []
+        if not items:
+            return CommandResult(handled=True, output="No bridge sessions registered")
+        bridge_id = _tail(raw)
+        if not bridge_id:
+            return CommandResult(
+                handled=True,
+                output="\n".join(
+                    f"{item['bridge_id']}: {item['local_session_id']} -> {item['remote_session_id']} ({item['transport']})"
+                    for item in items
+                ),
+            )
+        for item in items:
+            if item["bridge_id"] == bridge_id:
+                return CommandResult(handled=True, output=json.dumps(item, indent=2, ensure_ascii=False))
+        return CommandResult(handled=True, output=f"Unknown bridge session: {bridge_id}")
+
+
+class RuntimeCommand(Command):
+    name = "runtime"
+    help_text = "Show runtime directories and provider selection"
+
+    async def run(self, raw: str, context: CommandContext) -> CommandResult:
+        runtime = context.metadata["runtime"]
+        return CommandResult(
+            handled=True,
+            output=(
+                f"cwd={runtime.cwd}\n"
+                f"session_dir={runtime.session_dir}\n"
+                f"plugin_dir={runtime.plugin_dir}\n"
+                f"skill_dir={runtime.skill_dir}\n"
+                f"mcp_dir={runtime.mcp_dir}\n"
+                f"provider={runtime.provider}\n"
+                f"model={runtime.model_name}"
+            ),
+        )
+
+
+class CommandsCommand(Command):
+    name = "commands"
+    help_text = "List registered slash commands"
+
+    async def run(self, raw: str, context: CommandContext) -> CommandResult:
+        registry = context.metadata.get("commands")
+        lines = registry.help_lines() if registry else []
+        return CommandResult(handled=True, output="\n".join(lines) if lines else "No commands registered")

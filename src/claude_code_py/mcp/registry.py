@@ -31,10 +31,14 @@ class MCPRegistry:
         return specs
 
     def get(self, name: str) -> MCPServerSpec | None:
+        if name not in self._specs:
+            self.discover()
         return self._specs.get(name)
 
     def runnable_command(self, name: str) -> list[str]:
-        spec = self._specs[name]
+        spec = self.get(name)
+        if spec is None:
+            raise KeyError(name)
         if not spec.command:
             raise ValueError(f"MCP server {name} has no runnable command")
         return spec.command

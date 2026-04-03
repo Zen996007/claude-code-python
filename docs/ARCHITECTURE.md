@@ -1,55 +1,59 @@
 # Architecture
 
-## Runtime stack
+## High-level flow
 
-1. **CLI** initializes runtime config, tools, commands, provider, and approval hooks.
+1. **CLI** initializes runtime config, provider selection, tools, commands, and approval hooks.
 2. **QueryEngine** owns session state, transcript persistence, command dispatch, and prompt submission.
 3. **AgentLoop** performs the provider ⇄ tool execution loop until the provider ends the turn or max-turns trips.
-4. **Provider** converts conversation state into model responses.
+4. **Registry surfaces** expose plugins, skills, MCP specs, tasks, remote sessions, and bridge sessions into slash commands and top-level CLI inspection.
 5. **ToolExecutor** validates tool calls, evaluates permissions, obtains approval when needed, and executes tools.
-6. **SessionStore / TranscriptStore** persist state and append-only execution history.
 
-## Main modules
+## Package map
 
 - `providers/`
   - `base.py`: provider protocol and config
   - `mock.py`: deterministic development provider
   - `openai_compatible.py`: real HTTP provider scaffold
+  - `factory.py`: runtime provider selection
 - `commands/`
-  - `base.py`: command interfaces
-  - `registry.py`: slash command dispatch
-  - `builtins.py`: starter commands
-- `permissions/`
-  - `policy.py`: request/result model with allow/ask/deny decisions
+  - `builtins.py`: slash command implementations
+  - `registry.py`: slash command dispatch and typo suggestions
+- `builtins/`
+  - `file_tools.py`: read/write/edit/list tools
+  - `search_tools.py`: glob and grep-style project search
+  - `bash_tool.py`: subprocess execution
 - `storage/`
-  - `transcript.py`: transcript and session state stores
-- `integrations/`, `plugins/`, `skills/`, `mcp/`, `tasks/`, `remote/`, `bridge/`
-  - intentionally thin interfaces to make later feature work additive instead of invasive
+  - `transcript.py`: transcript and session state stores, latest-session lookup
+- `plugins/`, `skills/`, `mcp/`, `tasks/`, `remote/`, `bridge/`
+  - filesystem-backed specs surfaced through runtime introspection
+- `registry_snapshot.py`
+  - stable serialization helpers used by commands/CLI
 
-## Turn flow
+## Session lifecycle
 
 ```text
-user prompt
-  -> QueryEngine
-    -> CommandRegistry? (if /command)
-    -> AgentLoop
+CLI run
+  -> build runtime config
+  -> build provider from runtime.provider
+  -> build tool registry + command registry
+  -> QueryEngine.submit(prompt)
+      -> slash command? dispatch immediately
+      -> append user message to transcript
       -> Provider.generate(messages, tools)
       -> tool calls?
          -> ToolExecutor.execute(call)
-         -> PermissionPolicy.evaluate(request)
-         -> approval hook? (optional)
-         -> tool.run(parsed_input, context)
+            -> PermissionPolicy.evaluate(...)
+            -> optional approval handler
+            -> tool.run(parsed_input, context)
       -> append tool messages
-      -> repeat until end_turn
-    -> persist transcript + state
+      -> append assistant messages
+      -> persist session counters + last prompt + lineage
 ```
 
-## Why this structure
-
-This keeps the rewrite practical:
+## Design notes
 
 - **provider-independent core** for easier testing
-- **append-only transcript** for observability and replay
-- **approval hook** so policy and UI stay decoupled
+- **append-only transcripts** for replay and auditing
 - **registry-driven tools/commands** for future auto-discovery
-- **scaffolded extension packages** so MCP/plugins/skills can land without another rewrite
+- **filesystem-backed registries** keep plugin/skill/MCP/task/remote/bridge state transparent
+- **CLI and slash-command parity** lets the same state be inspected in or out of a live session
