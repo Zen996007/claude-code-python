@@ -8,9 +8,10 @@ from pydantic import BaseModel, Field
 class RuntimeConfig(BaseModel):
     cwd: Path
     session_dir: Path
-    model_name: str = "stub-model"
+    model_name: str = "mock-provider"
     max_turns: int = 12
     verbose: bool = False
+    allow_commands: bool = True
 
 
 class SessionState(BaseModel):
@@ -19,3 +20,4 @@ class SessionState(BaseModel):
     total_tool_calls: int = 0
     total_messages: int = 0
     notes: list[str] = Field(default_factory=list)
+    command_history: list[str] = Field(default_factory=list)

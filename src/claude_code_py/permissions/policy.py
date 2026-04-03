@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from enum import Enum
+from fnmatch import fnmatch
+from pathlib import Path
 
 
 class PermissionDecision(str, Enum):
@@ -9,10 +12,31 @@ class PermissionDecision(str, Enum):
     ASK = "ask"
 
 
+@dataclass(slots=True)
+class PermissionRequest:
+    tool_name: str
+    arguments: dict
+    cwd: Path
+
+
+@dataclass(slots=True)
+class PermissionResult:
+    decision: PermissionDecision
+    reason: str
+    metadata: dict[str, str] = field(default_factory=dict)
+
+
 class PermissionPolicy:
-    def __init__(self) -> None:
-        self.read_only_tools = {"file_read"}
-        self.safe_shell_prefixes = (
+    def __init__(
+        self,
+        read_only_tools: set[str] | None = None,
+        writable_tool_names: set[str] | None = None,
+        safe_shell_prefixes: tuple[str, ...] | None = None,
+        blocked_shell_patterns: tuple[str, ...] | None = None,
+    ) -> None:
+        self.read_only_tools = read_only_tools or {"file_read", "file_list"}
+        self.writable_tool_names = writable_tool_names or {"file_write", "file_edit"}
+        self.safe_shell_prefixes = safe_shell_prefixes or (
             "ls",
             "pwd",
             "find",
@@ -21,19 +45,29 @@ class PermissionPolicy:
             "pytest",
             "ruff",
             "python -m pytest",
+            "git status",
+        )
+        self.blocked_shell_patterns = blocked_shell_patterns or (
+            "rm *",
+            "rm -rf*",
+            "sudo *",
+            "chmod 777*",
+            "> /dev/sd*",
         )
 
-    def decide(self, tool_name: str, arguments: dict) -> PermissionDecision:
-        if tool_name in self.read_only_tools:
-            return PermissionDecision.ALLOW
+    def evaluate(self, request: PermissionRequest) -> PermissionResult:
+        if request.tool_name in self.read_only_tools:
+            return PermissionResult(PermissionDecision.ALLOW, "read-only tool")
 
-        if tool_name == "bash":
-            command = str(arguments.get("command", "")).strip()
+        if request.tool_name == "bash":
+            command = str(request.arguments.get("command", "")).strip()
+            if any(fnmatch(command, pattern) for pattern in self.blocked_shell_patterns):
+                return PermissionResult(PermissionDecision.DENY, "blocked shell pattern")
             if any(command.startswith(prefix) for prefix in self.safe_shell_prefixes):
-                return PermissionDecision.ALLOW
-            return PermissionDecision.ASK
+                return PermissionResult(PermissionDecision.ALLOW, "safe shell prefix")
+            return PermissionResult(PermissionDecision.ASK, "shell command requires approval")
 
-        if tool_name in {"file_write", "file_edit"}:
-            return PermissionDecision.ASK
+        if request.tool_name in self.writable_tool_names:
+            return PermissionResult(PermissionDecision.ASK, "filesystem write requires approval")
 
-        return PermissionDecision.ASK
+        return PermissionResult(PermissionDecision.ASK, "default interactive approval")

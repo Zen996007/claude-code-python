@@ -1,2 +1,0 @@
-[console_scripts]
-claude-code-py = claude_code_py.cli.main:app

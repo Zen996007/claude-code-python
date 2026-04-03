@@ -1,57 +1,55 @@
 # Architecture
 
-## Rewrite target
+## Runtime stack
 
-This project aims to re-express the main Claude Code architectural layers in Python:
+1. **CLI** initializes runtime config, tools, commands, provider, and approval hooks.
+2. **QueryEngine** owns session state, transcript persistence, command dispatch, and prompt submission.
+3. **AgentLoop** performs the provider ⇄ tool execution loop until the provider ends the turn or max-turns trips.
+4. **Provider** converts conversation state into model responses.
+5. **ToolExecutor** validates tool calls, evaluates permissions, obtains approval when needed, and executes tools.
+6. **SessionStore / TranscriptStore** persist state and append-only execution history.
 
-1. CLI bootstrap
-2. Runtime initialization
-3. Session-oriented QueryEngine
-4. Agent loop with tool_use / tool_result cycle
-5. Tool abstraction, registry, and executor
-6. Permission system
-7. Command system
-8. Transcript persistence and compaction hooks
-9. MCP / plugin / skill integration points
-10. Task / multi-agent / worktree-ready orchestration
-11. TUI-friendly presentation layer
+## Main modules
 
-## Planned package map
+- `providers/`
+  - `base.py`: provider protocol and config
+  - `mock.py`: deterministic development provider
+  - `openai_compatible.py`: real HTTP provider scaffold
+- `commands/`
+  - `base.py`: command interfaces
+  - `registry.py`: slash command dispatch
+  - `builtins.py`: starter commands
+- `permissions/`
+  - `policy.py`: request/result model with allow/ask/deny decisions
+- `storage/`
+  - `transcript.py`: transcript and session state stores
+- `integrations/`, `plugins/`, `skills/`, `mcp/`, `tasks/`, `remote/`, `bridge/`
+  - intentionally thin interfaces to make later feature work additive instead of invasive
 
-- `cli/` – Typer CLI entrypoints
-- `core/` – Query engine, agent loop, runtime state
-- `tools/` – Tool abstractions and registry
-- `builtins/` – Built-in file, shell, web tools
-- `permissions/` – Permission policy and decisions
-- `storage/` – session transcripts and persistence
-- `commands/` – slash-command analogs
-- `integrations/`, `mcp/`, `plugins/`, `skills/` – extension layers
-- `tasks/` – task system and multi-agent orchestration
-- `ui/` – terminal presentation adapters
-- `bridge/`, `remote/` – remote session support
-- `models/` – shared Pydantic models
+## Turn flow
 
-## Development phases
+```text
+user prompt
+  -> QueryEngine
+    -> CommandRegistry? (if /command)
+    -> AgentLoop
+      -> Provider.generate(messages, tools)
+      -> tool calls?
+         -> ToolExecutor.execute(call)
+         -> PermissionPolicy.evaluate(request)
+         -> approval hook? (optional)
+         -> tool.run(parsed_input, context)
+      -> append tool messages
+      -> repeat until end_turn
+    -> persist transcript + state
+```
 
-### Phase 1
-- Core models
-- CLI bootstrap
-- QueryEngine skeleton
-- Tool abstraction and registry
-- Built-in file/shell tools
-- Minimal permission gate
-- Local transcript storage
+## Why this structure
 
-### Phase 2
-- Streaming agent loop
-- command routing
-- richer shell/file tooling
-- summary/compact hooks
-- test suite expansion
+This keeps the rewrite practical:
 
-### Phase 3
-- MCP integration
-- plugin and skill loaders
-- tasks, sub-agents, worktree support
-- TUI layer
-- remote bridge/session features
+- **provider-independent core** for easier testing
+- **append-only transcript** for observability and replay
+- **approval hook** so policy and UI stay decoupled
+- **registry-driven tools/commands** for future auto-discovery
+- **scaffolded extension packages** so MCP/plugins/skills can land without another rewrite

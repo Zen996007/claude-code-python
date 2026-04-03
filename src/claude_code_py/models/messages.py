@@ -27,8 +27,21 @@ class ToolResult(BaseModel):
     is_error: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict)
 
+    def to_tool_message(self) -> Message:
+        return Message(
+            role="tool",
+            name=self.name,
+            content=self.output,
+            metadata={
+                "tool_call_id": self.tool_call_id,
+                "is_error": self.is_error,
+                **self.metadata,
+            },
+        )
+
 
 class AgentResponse(BaseModel):
     text: str = ""
     tool_calls: list[ToolCall] = Field(default_factory=list)
-    stop_reason: Literal["end_turn", "tool_use"] = "end_turn"
+    stop_reason: Literal["end_turn", "tool_use", "max_turns"] = "end_turn"
+    metadata: dict[str, Any] = Field(default_factory=dict)

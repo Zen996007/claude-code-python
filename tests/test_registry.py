@@ -8,3 +8,4 @@ def test_registry_register_and_get() -> None:
     registry.register(tool)
     assert registry.get("file_read") is tool
     assert "file_read" in registry.names()
+    assert registry.describe_all()[0]["name"] == "file_read"
